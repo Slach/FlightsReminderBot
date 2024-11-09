@@ -17,6 +17,7 @@ from telegram.ext import (
     PreCheckoutQueryHandler
 )
 from calendar import monthcalendar
+from typing import List, Dict, Any
 
 # Load environment variables
 load_dotenv()
@@ -341,17 +342,111 @@ def get_status_emoji(status):
         return '❌'
     return '❓'
 
+# Add new function to handle Aviationstack API calls
+async def check_flight_aviationstack(session: aiohttp.ClientSession, 
+                                   flight_number: str, 
+                                   airline_iata: str, 
+                                   flight_date: str) -> Dict[str, Any]:
+    """Check flight status using Aviationstack API."""
+    api_key = os.getenv('AVIATIONSTACK_KEY')
+    base_url = "http://api.aviationstack.com/v1/flights"
+    
+    params = {
+        'access_key': api_key,
+        'flight_date': datetime.strptime(flight_date, "%Y%m%d").strftime("%Y-%m-%d"),
+        'flight_number': flight_number,
+        'airline_iata': airline_iata
+    }
+    
+    try:
+        async with session.get(base_url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                if data.get('data'):
+                    return data['data'][0]  # Return first matching flight
+            return None
+    except Exception as e:
+        logger.error(f"Aviationstack API error: {str(e)}")
+        return None
+
+# Add new function to handle FlightAPI calls
+async def check_flight_flightapi(session: aiohttp.ClientSession,
+                               flight_number: str,
+                               airline: str,
+                               flight_date: str) -> Dict[str, Any]:
+    """Check flight status using FlightAPI."""
+    api_key = os.getenv('FLIGHTAPI_KEY')
+    url = f"https://api.flightapi.io/airline/{api_key}"
+    
+    params = {
+        'num': flight_number,
+        'name': airline,
+        'date': flight_date
+    }
+    
+    try:
+        async with session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            return None
+    except Exception as e:
+        logger.error(f"FlightAPI error: {str(e)}")
+        return None
+
+# Format response for Aviationstack
+def format_aviationstack_response(flight_data: Dict[str, Any]) -> str:
+    """Format Aviationstack API response into a message."""
+    try:
+        status = flight_data.get('flight_status', 'Unknown')
+        status_emoji = get_status_emoji(status)
+        
+        departure = flight_data.get('departure', {})
+        arrival = flight_data.get('arrival', {})
+        
+        message = (
+            f"✈️ *Flight {flight_data.get('airline', {}).get('iata', '')} {flight_data.get('flight', {}).get('number', '')}*\n\n"
+            f"*Status:* {status_emoji} {status}\n\n"
+            f"*Departure:*\n"
+            f"🌍 {departure.get('airport', 'Unknown')}\n"
+            f"🕒 {departure.get('scheduled', 'Unknown')}\n"
+            f"🚪 Terminal: {departure.get('terminal', 'N/A')}\n"
+            f"🚶 Gate: {departure.get('gate', 'N/A')}\n\n"
+            f"*Arrival:*\n"
+            f"📍 {arrival.get('airport', 'Unknown')}\n"
+            f"🕒 {arrival.get('scheduled', 'Unknown')}\n"
+            f"🚪 Terminal: {arrival.get('terminal', 'N/A')}\n"
+            f"🚶 Gate: {arrival.get('gate', 'N/A')}"
+        )
+        
+        if flight_data.get('live'):
+            live = flight_data['live']
+            message += (
+                f"\n\n*Live Data:*\n"
+                f"📍 Latitude: {live.get('latitude', 'N/A')}\n"
+                f"📍 Longitude: {live.get('longitude', 'N/A')}\n"
+                f"✈️ Altitude: {live.get('altitude', 'N/A')}m\n"
+                f"🎯 Direction: {live.get('direction', 'N/A')}°"
+            )
+        
+        return message
+    except Exception as e:
+        logger.error(f"Error formatting Aviationstack response: {str(e)}")
+        return "Error formatting flight information"
+
 async def periodic_flight_check(application: Application):
-    """Check all tracked flights every hour."""
+    """Check all tracked flights periodically based on configured provider."""
+    api_provider = os.getenv('API_PROVIDER', 'aviationstack').lower()
+    poll_interval = int(os.getenv('API_POLL_INTERVAL', '3600'))
+    
     while True:
-        await asyncio.sleep(int(os.getenv('FLIGHTAPI_POLL_INTERVAL', '3600')))
+        await asyncio.sleep(poll_interval)
+        
+        # Database connection and query
         conn = sqlite3.connect('flights.db')
         c = conn.cursor()
-        
-        # Get current date in YYYYMMDD format
         current_date = datetime.now().strftime("%Y%m%d")
         
-        # Group by flight details and collect chat_ids
         c.execute('''
             SELECT 
                 airline,
@@ -366,17 +461,77 @@ async def periodic_flight_check(application: Application):
         grouped_flights = c.fetchall()
         conn.close()
         
-        for airline, flight_number, flight_date, chat_ids_str in grouped_flights:
-            # Convert chat_ids string to list of integers
-            chat_ids = [int(id) for id in chat_ids_str.split(',')]
-            await check_flight_status(
-                application.bot,
-                chat_ids,
-                airline,
-                flight_number,
-                flight_date
-            )
+        async with aiohttp.ClientSession() as session:
+            for airline, flight_number, flight_date, chat_ids_str in grouped_flights:
+                chat_ids = [int(id) for id in chat_ids_str.split(',')]
+                
+                try:
+                    if api_provider == 'aviationstack':
+                        # Assume airline is IATA code for Aviationstack
+                        flight_data = await check_flight_aviationstack(
+                            session, 
+                            flight_number,
+                            airline,  # Using airline as IATA code
+                            flight_date
+                        )
+                        if flight_data:
+                            message = format_aviationstack_response(flight_data)
+                        else:
+                            message = "Could not fetch flight information"
+                            
+                    else:  # Default to FlightAPI
+                        flight_data = await check_flight_flightapi(
+                            session,
+                            flight_number,
+                            airline,
+                            flight_date
+                        )
+                        if flight_data:
+                            # Use existing format for FlightAPI response
+                            message = format_flight_data(flight_data)
+                        else:
+                            message = "Could not fetch flight information"
+                    
+                    # Send updates to all subscribed users
+                    for chat_id in chat_ids:
+                        try:
+                            await application.bot.send_message(
+                                chat_id=chat_id,
+                                text=message,
+                                parse_mode='Markdown'
+                            )
+                            logger.info(f"Sent flight update to chat_id: {chat_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to send message to chat_id {chat_id}: {str(e)}")
+                            
+                except Exception as e:
+                    logger.error(f"Error checking flight status: {str(e)}")
+                    continue
+
+# Add helper function to format FlightAPI response
+def format_flight_data(flight_data: Dict[str, Any]) -> str:
+    """Format FlightAPI response into a message."""
+    try:
+        departure_info = flight_data[0]['departure'][0]
+        arrival_info = flight_data[1]['arrival'][0]
         
+        status = departure_info.get('status', 'Unknown')
+        status_emoji = get_status_emoji(status)
+        
+        message = (
+            f"✈️ *Flight Status Update*\n\n"
+            f"*Status:* {status_emoji} {status}\n\n"
+            f"*Departure:*\n"
+            f"🌍 {departure_info.get('Airport:', 'Unknown')}\n"
+            f"🕒 {departure_info.get('Scheduled Time:', 'Unknown')}\n\n"
+            f"*Arrival:*\n"
+            f"📍 {arrival_info.get('Airport:', 'Unknown')}\n"
+            f"🕒 {arrival_info.get('Scheduled Time:', 'Unknown')}"
+        )
+        return message
+    except Exception as e:
+        logger.error(f"Error formatting FlightAPI response: {str(e)}")
+        return "Error formatting flight information"
 
 async def payment_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the payment command using XTR"""
