@@ -1,12 +1,131 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>Flights Reminder App</h1>
-<div class="amount">{{ amount }} USDT</div>
-<div class="wallet-address">Wallet: {{ wallet_address }}</div>
-<!-- Centered TON Connect button container with styling -->
-<div id="ton-connect" style="display: flex; justify-content: center; margin: 20px 0;"></div>
-<button class="payment-button" onclick="initiatePayment()">PAY NOW</button>
+<div class="payment-container">
+    <h1 class="title">Flights Reminder App</h1>
+    
+    <div class="payment-card">
+        <div class="amount-display">
+            <span class="currency">USDT</span>
+            <span class="amount">{{ amount }}</span>
+        </div>
+        
+        <div class="wallet-info">
+            <div class="wallet-label">Recipient Wallet</div>
+            <div class="wallet-address">{{ wallet_address }}</div>
+        </div>
+
+        <div id="ton-connect" class="ton-connect-container"></div>
+        
+        <button class="payment-button" onclick="initiatePayment()">
+            <span class="button-icon">💸</span>
+            <span class="button-text">Pay Now</span>
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block head %}
+<style>
+    .payment-container {
+        padding: 20px;
+        animation: fadeIn 0.3s ease-in;
+    }
+
+    .title {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 30px;
+        color: var(--tg-theme-text-color, #000000);
+    }
+
+    .payment-card {
+        background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .amount-display {
+        text-align: center;
+        margin-bottom: 24px;
+    }
+
+    .currency {
+        font-size: 18px;
+        font-weight: 500;
+        color: var(--tg-theme-hint-color, #999999);
+        margin-right: 8px;
+    }
+
+    .amount {
+        font-size: 36px;
+        font-weight: 700;
+        color: var(--tg-theme-text-color, #000000);
+    }
+
+    .wallet-info {
+        background: var(--tg-theme-bg-color, #ffffff);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 24px;
+    }
+
+    .wallet-label {
+        font-size: 14px;
+        color: var(--tg-theme-hint-color, #999999);
+        margin-bottom: 8px;
+    }
+
+    .wallet-address {
+        font-size: 14px;
+        word-break: break-all;
+        font-family: monospace;
+        color: var(--tg-theme-text-color, #000000);
+    }
+
+    .ton-connect-container {
+        margin: 24px 0;
+        display: flex;
+        justify-content: center;
+    }
+
+    .payment-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        width: 100%;
+        background: var(--tg-theme-button-color, #2481cc);
+        color: var(--tg-theme-button-text-color, #ffffff);
+        border: none;
+        border-radius: 12px;
+        padding: 16px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+    }
+
+    .payment-button:active {
+        transform: scale(0.98);
+    }
+
+    .button-icon {
+        font-size: 20px;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+</style>
 {% endblock %}
 
 {% block scripts %}
