@@ -437,76 +437,72 @@ def format_aviationstack_response(flight_data: Dict[str, Any]) -> str:
 async def periodic_flight_check(application: Application):
     """Check all tracked flights periodically based on configured provider."""
     api_provider = os.getenv('API_PROVIDER', 'aviationstack').lower()
-    poll_interval = int(os.getenv('API_POLL_INTERVAL', '3600'))
     
-    while True:
-        await asyncio.sleep(poll_interval)
-        
-        # Database connection and query
-        conn = sqlite3.connect('flights.db')
-        c = conn.cursor()
-        current_date = datetime.now().strftime("%Y%m%d")
-        
-        c.execute('''
-            SELECT 
-                airline,
-                flight_number,
-                flight_date,
-                GROUP_CONCAT(chat_id) as chat_ids
-            FROM flight_tracks 
-            WHERE flight_date >= ?
-            GROUP BY airline, flight_number, flight_date
-        ''', (current_date,))
-        
-        grouped_flights = c.fetchall()
-        conn.close()
-        
-        async with aiohttp.ClientSession() as session:
-            for airline, flight_number, flight_date, chat_ids_str in grouped_flights:
-                chat_ids = [int(id) for id in chat_ids_str.split(',')]
+    # Database connection and query
+    conn = sqlite3.connect('flights.db')
+    c = conn.cursor()
+    current_date = datetime.now().strftime("%Y%m%d")
+    
+    c.execute('''
+        SELECT 
+            airline,
+            flight_number,
+            flight_date,
+            GROUP_CONCAT(chat_id) as chat_ids
+        FROM flight_tracks 
+        WHERE flight_date >= ?
+        GROUP BY airline, flight_number, flight_date
+    ''', (current_date,))
+    
+    grouped_flights = c.fetchall()
+    conn.close()
+    
+    async with aiohttp.ClientSession() as session:
+        for airline, flight_number, flight_date, chat_ids_str in grouped_flights:
+            chat_ids = [int(id) for id in chat_ids_str.split(',')]
+            
+            try:
+                if api_provider == 'aviationstack':
+                    # Assume airline is IATA code for Aviationstack
+                    flight_data = await check_flight_aviationstack(
+                        session, 
+                        flight_number,
+                        airline,  # Using airline as IATA code
+                        flight_date
+                    )
+                    if flight_data:
+                        message = format_aviationstack_response(flight_data)
+                    else:
+                        message = "Could not fetch flight information"
+                        
+                else:  # Default to FlightAPI
+                    flight_data = await check_flight_flightapi(
+                        session,
+                        flight_number,
+                        airline,
+                        flight_date
+                    )
+                    if flight_data:
+                        # Use existing format for FlightAPI response
+                        message = format_flight_data(flight_data)
+                    else:
+                        message = "Could not fetch flight information"
                 
-                try:
-                    if api_provider == 'aviationstack':
-                        # Assume airline is IATA code for Aviationstack
-                        flight_data = await check_flight_aviationstack(
-                            session, 
-                            flight_number,
-                            airline,  # Using airline as IATA code
-                            flight_date
+                # Send updates to all subscribed users
+                for chat_id in chat_ids:
+                    try:
+                        await application.bot.send_message(
+                            chat_id=chat_id,
+                            text=message,
+                            parse_mode='Markdown'
                         )
-                        if flight_data:
-                            message = format_aviationstack_response(flight_data)
-                        else:
-                            message = "Could not fetch flight information"
-                            
-                    else:  # Default to FlightAPI
-                        flight_data = await check_flight_flightapi(
-                            session,
-                            flight_number,
-                            airline,
-                            flight_date
-                        )
-                        if flight_data:
-                            # Use existing format for FlightAPI response
-                            message = format_flight_data(flight_data)
-                        else:
-                            message = "Could not fetch flight information"
-                    
-                    # Send updates to all subscribed users
-                    for chat_id in chat_ids:
-                        try:
-                            await application.bot.send_message(
-                                chat_id=chat_id,
-                                text=message,
-                                parse_mode='Markdown'
-                            )
-                            logger.info(f"Sent flight update to chat_id: {chat_id}")
-                        except Exception as e:
-                            logger.error(f"Failed to send message to chat_id {chat_id}: {str(e)}")
-                            
-                except Exception as e:
-                    logger.error(f"Error checking flight status: {str(e)}")
-                    continue
+                        logger.info(f"Sent flight update to chat_id: {chat_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to send message to chat_id {chat_id}: {str(e)}")
+                        
+            except Exception as e:
+                logger.error(f"Error checking flight status: {str(e)}")
+                continue
 
 # Add helper function to format FlightAPI response
 def format_flight_data(flight_data: Dict[str, Any]) -> str:
@@ -617,7 +613,7 @@ def main():
     async def periodic_check(context: ContextTypes.DEFAULT_TYPE):
         await periodic_flight_check(application)
     
-    job_queue.run_repeating(periodic_check, interval=3600, first=10)
+    job_queue.run_repeating(periodic_check, interval=int(os.getenv('API_POLL_INTERVAL', '3600')), first=10)
 
     # Start the Bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)

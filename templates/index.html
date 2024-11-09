@@ -1,35 +1,23 @@
 {% extends "base.html" %}
 
-{% block content %}
-<div class="payment-container">
-    <h1 class="title">Flights Reminder App</h1>
-    
-    <div class="payment-card">
-        <div class="amount-display">
-            <span class="currency">USDT</span>
-            <span class="amount">{{ amount }}</span>
-        </div>
-        
-        <div class="wallet-info">
-            <div class="wallet-label">Recipient Wallet</div>
-            <div class="wallet-address">{{ wallet_address }}</div>
-        </div>
-
-        <div id="ton-connect" class="ton-connect-container"></div>
-        
-        <button class="payment-button" onclick="initiatePayment()">
-            <span class="button-icon">💸</span>
-            <span class="button-text">Pay Now</span>
-        </button>
-    </div>
-</div>
-{% endblock %}
-
 {% block head %}
+<!-- Add favicon -->
+<link rel="icon" type="image/x-icon" href="/favonico.ico">
 <style>
     .payment-container {
         padding: 20px;
         animation: fadeIn 0.3s ease-in;
+    }
+
+    .logo-container {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .logo-container img {
+        width: 120px;
+        height: auto;
+        margin-bottom: 15px;
     }
 
     .title {
@@ -126,6 +114,34 @@
         }
     }
 </style>
+{% endblock %}
+
+{% block content %}
+<div class="payment-container">
+    <div class="logo-container">
+        <img src="/logo.svg" width="100px" alt="Flights Reminder Logo">
+        <h1 class="title">Flights Reminder App</h1>
+    </div>
+    
+    <div class="payment-card">
+        <div class="amount-display">
+            <span class="currency">USDT</span>
+            <span class="amount">{{ amount }}</span>
+        </div>
+        
+        <div class="wallet-info">
+            <div class="wallet-label">Recipient Wallet</div>
+            <div class="wallet-address">{{ wallet_address }}</div>
+        </div>
+
+        <div id="ton-connect" class="ton-connect-container"></div>
+        
+        <button class="payment-button" onclick="initiatePayment()">
+            <span class="button-icon">💸</span>
+            <span class="button-text">Pay Now</span>
+        </button>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
