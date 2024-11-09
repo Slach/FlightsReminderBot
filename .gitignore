@@ -1,0 +1,21 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# virtual environment
+.venv/
+*.db
+*.db-shm
+*.db-wal
+
+certbot/conf/

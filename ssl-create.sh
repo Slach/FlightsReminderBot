@@ -1,0 +1,1 @@
+docker compose run --rm certbot certonly -a webroot -d flights-reminder.com -d www.flights-reminder.com

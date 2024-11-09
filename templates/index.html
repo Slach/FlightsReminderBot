@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Flights Reminder App</h1>
+<div class="amount">{{ amount }} USDT</div>
+<div class="wallet-address">Wallet: {{ wallet_address }}</div>
+<!-- Centered TON Connect button container with styling -->
+<div id="ton-connect" style="display: flex; justify-content: center; margin: 20px 0;"></div>
+<button class="payment-button" onclick="initiatePayment()">PAY NOW</button>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let tg = window.Telegram.WebApp;
+    tg.expand();
+
+    // Initialize TON Connect UI properly
+    const tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+        manifestUrl: 'https://flights-reminder.com/tonconnect-manifest.json',
+        buttonRootId: 'ton-connect'
+    });
+
+    // Set return URL for Telegram Mini App
+    tonConnectUI.uiOptions = {
+        twaReturnUrl: 'https://t.me/FlightsReminderBot'
+    };
+
+    async function initiatePayment() {
+        try {
+            // Check if wallet is already connected
+            let wallet = tonConnectUI.wallet;
+            
+            if (!wallet) {
+                // Connect wallet only if not already connected
+                wallet = await tonConnectUI.connectWallet();
+                console.log("Connected wallet:", wallet);
+            }
+
+            // Prepare transaction
+            const transaction = {
+                messages: [{
+                    address: "{{ wallet_address }}",
+                    amount: "{{ amount }}" * 1000000000, // Convert to nanotons
+                    payload: "Flights Reminder Bot Payment"
+                }],
+                validUntil: Math.floor(Date.now() / 1000) + 600 // 10 minutes
+            };
+
+            // Send transaction using UI
+            const result = await tonConnectUI.sendTransaction(transaction);
+            console.log("Transaction result:", result);
+
+            // Send confirmation to backend
+            const response = await fetch('/process_payment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    transaction_id: result.boc // Transaction ID is in the boc field
+                })
+            });
+
+            if (response.ok) {
+                tg.showAlert('Payment successful!');
+                tg.close();
+            } else {
+                tg.showAlert('Payment verification failed. Please contact support.');
+            }
+        } catch (error) {
+            console.error("Payment error:", error);
+            tg.showAlert('Payment failed: ' + error.message);
+        }
+    }
+
+    // Handle wallet disconnection
+    async function disconnectWallet() {
+        await tonConnectUI.disconnect();
+    }
+</script>
+{% endblock %} 

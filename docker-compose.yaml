@@ -1,0 +1,45 @@
+services:
+  bot:
+    build: .
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    environment:
+      - RUN_SCRIPT=bot.py
+
+  miniapp:
+    build: .
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    environment:
+      - RUN_SCRIPT=app.py
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d/web.conf:/etc/nginx/conf.d/web.conf
+      - ./nginx/conf.d/ssl.conf:/etc/nginx/conf.d/ssl.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+      - ./static:/app/static
+    depends_on:
+      - miniapp
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    command: certonly --webroot -w /var/www/certbot --force-renewal --email admin@flights-reminder.com -d flights-reminder.com --agree-tos
+    depends_on:
+      - nginx
