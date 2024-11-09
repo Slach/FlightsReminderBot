@@ -52,26 +52,6 @@
         color: var(--tg-theme-text-color, #000000);
     }
 
-    .wallet-info {
-        background: var(--tg-theme-bg-color, #ffffff);
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 24px;
-    }
-
-    .wallet-label {
-        font-size: 14px;
-        color: var(--tg-theme-hint-color, #999999);
-        margin-bottom: 8px;
-    }
-
-    .wallet-address {
-        font-size: 14px;
-        word-break: break-all;
-        font-family: monospace;
-        color: var(--tg-theme-text-color, #000000);
-    }
-
     .ton-connect-container {
         margin: 24px 0;
         display: flex;
@@ -119,8 +99,8 @@
 {% block content %}
 <div class="payment-container">
     <div class="logo-container">
+        <h2 class="title">Flights Reminder App</h1>
         <img src="/logo.svg" width="100px" alt="Flights Reminder Logo">
-        <h1 class="title">Flights Reminder App</h1>
     </div>
     
     <div class="payment-card">
@@ -129,11 +109,6 @@
             <span class="amount">{{ amount }}</span>
         </div>
         
-        <div class="wallet-info">
-            <div class="wallet-label">Recipient Wallet</div>
-            <div class="wallet-address">{{ wallet_address }}</div>
-        </div>
-
         <div id="ton-connect" class="ton-connect-container"></div>
         
         <button class="payment-button" onclick="initiatePayment()">
