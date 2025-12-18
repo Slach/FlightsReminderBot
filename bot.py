@@ -18,6 +18,13 @@ from telegram.ext import (
 )
 from calendar import monthcalendar
 from typing import List, Dict, Any
+import json
+import base64
+from PIL import Image
+from io import BytesIO
+import fitz  # PyMuPDF for PDF processing
+import requests
+from ticket_ocr import allowed_file, process_pdf, process_image
 
 # Load environment variables
 load_dotenv()
@@ -415,7 +422,7 @@ def format_aviationstack_response(flight_data: Dict[str, Any]) -> str:
             f"*Arrival:*\n"
             f"📍 {arrival.get('airport', 'Unknown')}\n"
             f"🕒 {arrival.get('scheduled', 'Unknown')}\n"
-            f"🚪 Terminal: {arrival.get('terminal', 'N/A')}\n"
+            f" Terminal: {arrival.get('terminal', 'N/A')}\n"
             f"🚶 Gate: {arrival.get('gate', 'N/A')}"
         )
         
@@ -569,6 +576,138 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
         parse_mode='Markdown'
     )
 
+# Add new constants
+ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'pdf'}
+OLLAMA_API_URL = "http://ollama:11434/api/generate"
+
+# Add helper functions
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+async def process_image(image_data):
+    """Process image using Ollama vision model"""
+    # Convert image to base64
+    image_base64 = base64.b64encode(image_data).decode('utf-8')
+    
+    # Prepare the prompt from file
+    with open('ollama/prompt.txt', 'r') as f:
+        prompt = f.read()
+    
+    # Prepare request to Ollama
+    payload = {
+        "model": "llama3.2-vision",
+        "prompt": prompt,
+        "images": [image_base64],
+        "stream": False
+    }
+    
+    # Make request to Ollama
+    response = requests.post(OLLAMA_API_URL, json=payload)
+    if response.status_code == 200:
+        try:
+            result = response.json()
+            return json.loads(result['response'])  # Parse the JSON response
+        except json.JSONDecodeError:
+            return None
+    return None
+
+async def process_pdf(pdf_data):
+    """Process PDF using Ollama vision model"""
+    results = []
+    
+    # Open PDF
+    pdf_document = fitz.open(stream=pdf_data, filetype="pdf")
+    
+    # Process each page
+    for page_num in range(len(pdf_document)):
+        page = pdf_document[page_num]
+        
+        # Convert page to image
+        pix = page.get_pixmap()
+        img_data = pix.tobytes("png")
+        
+        # Process the image
+        result = await process_image(img_data)
+        if result:
+            results.append(result)
+    
+    # Combine results
+    combined_results = {
+        "segments": []
+    }
+    for result in results:
+        if result and "segments" in result:
+            combined_results["segments"].extend(result["segments"])
+    
+    return combined_results
+
+# Add new handler for file uploads
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle uploaded documents"""
+    message = update.message
+    
+    if not message.document:
+        await message.reply_text("Please send a document file.")
+        return
+    
+    file = message.document
+    if not allowed_file(file.file_name):
+        await message.reply_text(
+            f"Sorry, only {', '.join(ALLOWED_EXTENSIONS)} files are supported."
+        )
+        return
+    
+    # Download the file
+    file_obj = await context.bot.get_file(file.file_id)
+    file_data = await file_obj.download_as_bytearray()
+    
+    # Process based on file type
+    file_ext = file.file_name.rsplit('.', 1)[1].lower()
+    
+    await message.reply_text("Processing your file... Please wait.")
+    
+    try:
+        if file_ext == 'pdf':
+            result = await process_pdf(file_data)
+        else:  # image files
+            result = await process_image(file_data)
+        
+        if result and result.get('segments'):
+            # Format response message
+            response = "*Flight Information Extracted:*\n\n"
+            for idx, segment in enumerate(result['segments'], 1):
+                response += f"*Flight Segment {idx}:*\n"
+                response += f"Flight: `{segment.get('flight_number', 'N/A')}`\n"
+                
+                dep = segment.get('departure', {})
+                response += f"From: {dep.get('airport', 'N/A')} ({dep.get('code', 'N/A')})\n"
+                response += f"Departure: {dep.get('datetime', 'N/A')}\n"
+                
+                arr = segment.get('arrival', {})
+                response += f"To: {arr.get('airport', 'N/A')} ({arr.get('code', 'N/A')})\n"
+                response += f"Arrival: {arr.get('datetime', 'N/A')}\n"
+                
+                for passenger in segment.get('passengers', []):
+                    response += f"Passenger: {passenger.get('name', 'N/A')}\n"
+                    response += f"Seat: {passenger.get('seat', 'N/A')}\n"
+                
+                cost = segment.get('cost', {})
+                if cost.get('amount'):
+                    response += f"Cost: {cost.get('amount')} {cost.get('currency', '')}\n"
+                
+                response += "\n"
+            
+            await message.reply_text(response, parse_mode='Markdown')
+        else:
+            await message.reply_text(
+                "Sorry, I couldn't extract flight information from this document."
+            )
+    except Exception as e:
+        logger.error(f"Error processing file: {str(e)}")
+        await message.reply_text(
+            "Sorry, there was an error processing your file. Please try again."
+        )
+
 def main():
     """Start the bot."""
     # Setup database
@@ -608,6 +747,10 @@ def main():
     application.add_handler(CommandHandler("payment", payment_command))
     application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
+    application.add_handler(MessageHandler(
+        filters.Document.ALL & ~filters.COMMAND,
+        handle_document
+    ))
 
     # Start periodic flight checking using job_queue
     async def periodic_check(context: ContextTypes.DEFAULT_TYPE):

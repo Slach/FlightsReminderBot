@@ -95,6 +95,18 @@
 {% endblock %}
 
 {% block content %}
+<div class="upload-container">
+    <h3>Upload Flight Documents</h3>
+    <form id="upload-form" enctype="multipart/form-data">
+        <input type="file" id="file-input" accept=".jpg,.jpeg,.png,.pdf" style="display: none;">
+        <button type="button" class="upload-button" onclick="document.getElementById('file-input').click()">
+            Select File
+        </button>
+        <div id="file-name"></div>
+        <div id="upload-result"></div>
+    </form>
+</div>
+
 <div class="payment-container">
     <div class="logo-container">
         <h2 class="title">Flights Reminder App</h1>
@@ -185,5 +197,103 @@
     async function disconnectWallet() {
         await tonConnectUI.disconnect();
     }
+
+    // Add file upload handling
+    document.getElementById('file-input').addEventListener('change', async function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        document.getElementById('file-name').textContent = file.name;
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        try {
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok) {
+                displayFlightInfo(result);
+            } else {
+                document.getElementById('upload-result').innerHTML = 
+                    `<div class="error">Error: ${result.error}</div>`;
+            }
+        } catch (error) {
+            document.getElementById('upload-result').innerHTML = 
+                `<div class="error">Upload failed: ${error.message}</div>`;
+        }
+    });
+
+    function displayFlightInfo(data) {
+        const container = document.getElementById('upload-result');
+        let html = '<div class="flight-info">';
+        
+        data.segments.forEach((segment, index) => {
+            html += `
+                <div class="flight-segment">
+                    <h4>Flight Segment ${index + 1}</h4>
+                    <p>Flight: ${segment.flight_number}</p>
+                    <p>From: ${segment.departure.airport} (${segment.departure.code})</p>
+                    <p>To: ${segment.arrival.airport} (${segment.arrival.code})</p>
+                    <p>Departure: ${segment.departure.datetime}</p>
+                    <p>Arrival: ${segment.arrival.datetime}</p>
+                    ${segment.passengers.map(p => `
+                        <p>Passenger: ${p.name}</p>
+                        <p>Seat: ${p.seat}</p>
+                    `).join('')}
+                    ${segment.cost ? `<p>Cost: ${segment.cost.amount} ${segment.cost.currency}</p>` : ''}
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        container.innerHTML = html;
+    }
 </script>
+
+<style>
+.upload-container {
+    margin-bottom: 30px;
+    padding: 20px;
+    background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+    border-radius: 16px;
+}
+
+.upload-button {
+    background: var(--tg-theme-button-color, #2481cc);
+    color: var(--tg-theme-button-text-color, #ffffff);
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    cursor: pointer;
+    margin: 10px 0;
+}
+
+.flight-info {
+    margin-top: 20px;
+    text-align: left;
+}
+
+.flight-segment {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: var(--tg-theme-bg-color, #ffffff);
+    border-radius: 8px;
+}
+
+.error {
+    color: #ff4444;
+    margin-top: 10px;
+}
+
+#file-name {
+    margin: 10px 0;
+    font-size: 14px;
+    color: var(--tg-theme-hint-color, #999999);
+}
+</style>
 {% endblock %} 

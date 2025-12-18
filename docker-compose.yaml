@@ -8,6 +8,10 @@ services:
       - .:/app
     environment:
       - RUN_SCRIPT=bot.py
+    depends_on:
+      - ollama
+    networks:
+      - app_network
 
   miniapp:
     build: .
@@ -18,6 +22,28 @@ services:
       - .:/app
     environment:
       - RUN_SCRIPT=app.py
+    depends_on:
+      - ollama
+    networks:
+      - app_network
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_volume:/root/.ollama  # Persistent storage for models
+    environment:
+      - OLLAMA_PULL_MODELS=llama3.2:3b qwen2.5-coder:32b llama3.2-vision:11b
+    entrypoint: /bin/bash
+    command: -xec "/bin/ollama serve & for m in $$OLLAMA_PULL_MODELS; do /bin/ollama pull $${m}; done; wait"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+    networks:
+      - app_network
 
   nginx:
     image: nginx:alpine
@@ -34,6 +60,8 @@ services:
     depends_on:
       - miniapp
     restart: unless-stopped
+    networks:
+      - app_network
 
   certbot:
     image: certbot/certbot:latest
@@ -43,3 +71,17 @@ services:
     command: certonly --webroot -w /var/www/certbot --force-renewal --email admin@flights-reminder.com -d flights-reminder.com --agree-tos
     depends_on:
       - nginx
+    networks:
+      - app_network
+
+volumes:
+  ollama_volume:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/src/ollama/storage
+
+networks:
+  app_network:
+    driver: bridge
