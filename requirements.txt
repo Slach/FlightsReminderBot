@@ -1,5 +1,5 @@
 python-telegram-bot[all]==21.7
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 aiohttp==3.13.4
 qrcode==8.0
 Flask==3.1.3
